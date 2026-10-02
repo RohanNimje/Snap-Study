@@ -1,6 +1,14 @@
+import os
 import streamlit as st
 import google.generativeai as genai
 from PIL import Image
+
+# Load .env for local development (safe no-op if file absent or dotenv not installed)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed — that's fine in cloud environments
 
 # -----------------------------------------------------------------------------
 # 1. Page Configuration (Split-Screen Workspace)
@@ -39,9 +47,37 @@ html, body, [class*="css"], .stMarkdown {
 }
 
 .main .block-container {
-    padding-top: 1.8rem !important;
-    padding-bottom: 4rem !important;
+    padding-top: 0.6rem !important;
+    padding-bottom: 0 !important;
     max-width: 1440px !important;
+    overflow: hidden !important;
+}
+
+/* ── Force both columns to share the same top edge ── */
+[data-testid="stHorizontalBlock"] {
+    align-items: flex-start !important;
+}
+
+/* ── Right Panel: strict 70vh flex column, never grows ── */
+.right-panel-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 70vh;
+    max-height: 70vh;
+    overflow: hidden;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+/* Scrollable middle zone — expands to fill remaining height */
+.content-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.4rem;
+    scroll-behavior: smooth;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
 }
 
 /* Left Control Panel Glass Card */
@@ -354,19 +390,22 @@ div[data-testid="stChatMessageContent"] {
     line-height: 1.7 !important;
 }
 
-/* Sticky Bottom Chat Input */
+/* Chat Input — in-column, natively anchored by Streamlit */
 div[data-testid="stChatInput"] {
     position: sticky !important;
-    bottom: 1.5rem !important;
-    z-index: 99 !important;
+    bottom: 0 !important;
+    z-index: 999 !important;
     border: 1px solid rgba(168, 85, 247, 0.35) !important;
+    border-top: 2px solid rgba(168, 85, 247, 0.5) !important;
     border-radius: 14px !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6) !important;
+    background: #0E1015 !important;
+    margin-top: 0.5rem !important;
 }
 
 div[data-testid="stChatInput"]:focus-within {
     border-color: #A855F7 !important;
-    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25), 0 8px 25px rgba(0, 0, 0, 0.5) !important;
+    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.25), 0 -4px 24px rgba(0, 0, 0, 0.6) !important;
 }
 
 div[data-testid="stChatInput"] textarea {
@@ -403,18 +442,56 @@ div[data-testid="stDownloadButton"] > button:hover {
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 14px rgba(168, 85, 247, 0.3) !important;
 }
+
+/* Chat message list — fills space inside the flex scroll area */
+.chat-scroll-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding-bottom: 0.5rem;
+}
+
+/* Scrollbar for content-scroll-area */
+.content-scroll-area::-webkit-scrollbar {
+    width: 5px;
+}
+
+.content-scroll-area::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 4px;
+}
+
+.content-scroll-area::-webkit-scrollbar-thumb {
+    background: rgba(168, 85, 247, 0.35);
+    border-radius: 4px;
+}
+
+.content-scroll-area::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.6);
+}
+
+/* Chat input — sits at the bottom of right-panel-wrapper naturally */
+/* (flex-shrink:0 prevents it from being squeezed by scroll area) */
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # 3. API Key & Gemini Client Configuration
+# Priority: st.secrets (Streamlit Cloud) → OS environment var → .env file
 # -----------------------------------------------------------------------------
 try:
-    if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
-        api_key = st.secrets["GEMINI_API_KEY"]
-    else:
-        st.error("🔑 **GEMINI_API_KEY Missing**: Please configure your API key in Streamlit secrets (`.streamlit/secrets.toml`).")
+    api_key = (
+        st.secrets.get("GEMINI_API_KEY")          # 1️⃣  Streamlit Cloud secrets.toml
+        or os.environ.get("GEMINI_API_KEY")        # 2️⃣  Shell / CI environment variable
+    )
+    if not api_key:
+        st.error(
+            "🔑 **GEMINI_API_KEY not found.**\n\n"
+            "**Locally:** Create a `.env` file with `GEMINI_API_KEY=your_key_here`, "
+            "or set it as a shell environment variable.\n\n"
+            "**Streamlit Cloud:** Add it under *Settings → Secrets* in the dashboard."
+        )
         st.stop()
     genai.configure(api_key=api_key)
 except Exception as e:
@@ -483,140 +560,141 @@ with col_control:
 # RIGHT PANEL (Width 7): Dynamic Canvas Workspace & Bottom Sticky Chat Bar
 # =============================================================================
 with col_output:
-    # 1. Handle Study Guide Generation Logic
-    if generate_btn:
-        if uploaded_file is None or image is None:
-            st.warning("⚠️ Please upload an image of your study notes on the left panel first.")
-        else:
-            with st.spinner("🧠 Analyzing source material & synthesizing study guide..."):
-                try:
-                    model = genai.GenerativeModel("gemini-3.5-flash-lite")
+    # Native fixed-height scrollable area — no custom HTML wrapper needed
+    chat_area = st.container(height=520, border=False)
+    with chat_area:
+        # 1. Handle Study Guide Generation Logic
+        if generate_btn:
+            if uploaded_file is None or image is None:
+                st.warning("⚠️ Please upload an image of your study notes on the left panel first.")
+            else:
+                with st.spinner("🧠 Analyzing source material & synthesizing study guide..."):
+                    try:
+                        model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
-                    system_prompt = f"""
-                    You are an elite academic AI tutor with deep expertise in pedagogy and active recall learning.
-                    Analyze this image of study material carefully.
-                    
-                    Selected Focus Mode: {study_mode}
+                        system_prompt = f"""
+                        You are an elite academic AI tutor with deep expertise in pedagogy and active recall learning.
+                        Analyze this image of study material carefully.
+                        
+                        Selected Focus Mode: {study_mode}
 
-                    Provide a high-yield, beautifully organized study guide using clean Markdown formatting:
-                    
-                    ## 📌 Core Summary & Key Concepts
-                    - Break down the main themes, key formulas, or primary arguments into clean, digestible bullet points.
-                    - Highlight foundational principles and big-picture takeaways.
-                    
-                    ## 🧠 Vocabulary & Technical Jargon Demystified
-                    - Identify complex, technical, or confusing terms from the material.
-                    - Provide simple, intuitive explanations and analogies.
-                    
-                    ## 📝 High-Yield Practice Quiz & Active Recall
-                    - Provide 3 challenging practice questions to test deep comprehension.
-                    - Include an answer key with brief explanations.
-                    
-                    ## 💡 Pro Study Tip & Memory Hook
-                    > **Memory Accelerator**: Give 1 mnemonic or quick mental framework to remember this topic easily.
-                    """
+                        Provide a high-yield, beautifully organized study guide using clean Markdown formatting:
+                        
+                        ## 📌 Core Summary & Key Concepts
+                        - Break down the main themes, key formulas, or primary arguments into clean, digestible bullet points.
+                        - Highlight foundational principles and big-picture takeaways.
+                        
+                        ## 🧠 Vocabulary & Technical Jargon Demystified
+                        - Identify complex, technical, or confusing terms from the material.
+                        - Provide simple, intuitive explanations and analogies.
+                        
+                        ## 📝 High-Yield Practice Quiz & Active Recall
+                        - Provide 3 challenging practice questions to test deep comprehension.
+                        - Include an answer key with brief explanations.
+                        
+                        ## 💡 Pro Study Tip & Memory Hook
+                        > **Memory Accelerator**: Give 1 mnemonic or quick mental framework to remember this topic easily.
+                        """
 
-                    response = model.generate_content([system_prompt, image])
+                        response = model.generate_content([system_prompt, image])
 
-                    if not response or not response.text:
-                        st.error("The model returned an empty response. Please try again with a clearer image.")
+                        if not response or not response.text:
+                            st.error("The model returned an empty response. Please try again with a clearer image.")
+                            st.stop()
+
+                        st.session_state.study_guide_result = response.text
+                        st.session_state.study_mode_used = study_mode
+
+                    except Exception as api_error:
+                        st.error(f"❌ **Generation Error**: Unable to process notes. Details: {str(api_error)}")
                         st.stop()
 
-                    st.session_state.study_guide_result = response.text
-                    st.session_state.study_mode_used = study_mode
+        # 2. Main Dynamic Workspace States
+        has_guide = st.session_state.study_guide_result is not None
+        has_chat = len(st.session_state.chat_messages) > 0
 
-                except Exception as api_error:
-                    st.error(f"❌ **Generation Error**: Unable to process notes. Details: {str(api_error)}")
-                    st.stop()
-
-    # 2. Main Dynamic Workspace States
-    has_guide = st.session_state.study_guide_result is not None
-    has_chat = len(st.session_state.chat_messages) > 0
-
-    if not uploaded_file:
-        # Default State: Breathtaking Empty State
-        st.markdown(
-            """
-            <div class="empty-state-card">
-                <div class="empty-state-glyph">✨</div>
-                <div class="empty-state-heading">Turn Notes into Knowledge</div>
-                <div class="empty-state-copy">
-                    Upload your handwritten scribbles or dense textbook pages on the left.
-                    Generate a high-yield study guide or chat directly with your document.
+        if not uploaded_file:
+            # Default State: Breathtaking Empty State
+            st.markdown(
+                """
+                <div class="empty-state-card">
+                    <div class="empty-state-glyph">✨</div>
+                    <div class="empty-state-heading">Turn Notes into Knowledge</div>
+                    <div class="empty-state-copy">
+                        Upload your handwritten scribbles or dense textbook pages on the left.
+                        Generate a high-yield study guide or chat directly with your document.
+                    </div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    elif not has_guide and not has_chat:
-        # On Upload: Prominently display source document preview
-        st.markdown(
-            f"""
+                """,
+                unsafe_allow_html=True,
+            )
+        elif not has_guide and not has_chat:
+            # On Upload: Prominently display source document preview
+            st.markdown(
+                f"""
+                <div class="floating-action-bar">
+                    <div class="action-bar-left">
+                        <span class="action-pill">📄 Source Document</span>
+                        <span class="action-meta">{uploaded_file.name}</span>
+                    </div>
+                    <div class="action-meta" style="font-weight: 600; color: #D8B4FE;">
+                        Ready for Synthesis & Chat
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="source-preview-card">', unsafe_allow_html=True)
+            st.image(image, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            # Auto-Hide Image on Generation or Question: Collapse into small expander
+            with st.expander("View Source Image", expanded=False):
+                st.image(image, use_container_width=True)
+
+            # On Generate: Replace with AI-generated Study Guide Trophy Card
+            if has_guide:
+                action_bar_html = f"""
             <div class="floating-action-bar">
                 <div class="action-bar-left">
-                    <span class="action-pill">📄 Source Document</span>
-                    <span class="action-meta">{uploaded_file.name}</span>
+                    <span class="action-pill">⚡ Knowledge Artifact</span>
+                    <span class="action-meta">{st.session_state.get('study_mode_used', 'Standard').split('(')[0].strip()}</span>
                 </div>
                 <div class="action-meta" style="font-weight: 600; color: #D8B4FE;">
-                    Ready for Synthesis & Chat
+                    Active Recall Enabled
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.markdown('<div class="source-preview-card">', unsafe_allow_html=True)
-        st.image(image, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        # Auto-Hide Image on Generation or Question: Collapse into small expander
-        with st.expander("View Source Image", expanded=False):
-            st.image(image, use_container_width=True)
-
-        # On Generate: Replace with AI-generated Study Guide Trophy Card
-        if has_guide:
-            action_bar_html = f"""
-        <div class="floating-action-bar">
-            <div class="action-bar-left">
-                <span class="action-pill">⚡ Knowledge Artifact</span>
-                <span class="action-meta">{st.session_state.get('study_mode_used', 'Standard').split('(')[0].strip()}</span>
-            </div>
-            <div class="action-meta" style="font-weight: 600; color: #D8B4FE;">
-                Active Recall Enabled
-            </div>
-        </div>
-        """
-            st.markdown(action_bar_html, unsafe_allow_html=True)
-
-            st.markdown('<div class="dopamine-card">', unsafe_allow_html=True)
-            st.markdown(st.session_state.study_guide_result)
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            # Export action button
-            st.download_button(
-                label="📥 Export Study Guide (.md)",
-                data=st.session_state.study_guide_result,
-                file_name="Snap_and_Study_Guide.md",
-                mime="text/markdown",
-                use_container_width=True,
-            )
-
-    # 3. Chat Discussion History (Preserved 100% Identical UI)
-    if has_chat:
-        st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
-        st.markdown(
             """
-            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.5rem;">
-                <span style="font-size: 1.1rem; font-weight: 700; color: #FFFFFF;">💬 Document Q&A Discussion</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        for msg in st.session_state.chat_messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+                st.markdown(action_bar_html, unsafe_allow_html=True)
 
-    # 4. Sticky Bottom Chat Bar (Right Column)
-    st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                st.markdown('<div class="dopamine-card">', unsafe_allow_html=True)
+                st.markdown(st.session_state.study_guide_result)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                # Export action button
+                st.download_button(
+                    label="📥 Export Study Guide (.md)",
+                    data=st.session_state.study_guide_result,
+                    file_name="Snap_and_Study_Guide.md",
+                    mime="text/markdown",
+                    use_container_width=True,
+                )
+
+        # 3. Chat Discussion History
+        if has_chat:
+            st.markdown(
+                """
+                <div style="display:flex;align-items:center;gap:0.5rem;margin:0 !important;padding-bottom:0.3rem;border-bottom:1px solid rgba(255,255,255,0.08);">
+                    <span style="font-size:1.1rem;font-weight:700;color:#FFFFFF;">💬 Document Q&A Discussion</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            for msg in st.session_state.chat_messages:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+    # 4. Chat Input — placed directly below the native fixed-height container
     chat_query = st.chat_input("Ask anything about this document...")
 
     if chat_query:
@@ -624,7 +702,7 @@ with col_output:
             st.warning("⚠️ Please upload an image of your notes before asking questions.")
         else:
             st.session_state.chat_messages.append({"role": "user", "content": chat_query})
-            with st.spinner("🤖 Consulting your study notes..."):
+            with st.spinner("🤖 Thinking..."):
                 try:
                     model = genai.GenerativeModel("gemini-3.5-flash-lite")
                     chat_system_prompt = f"""
@@ -634,8 +712,19 @@ with col_output:
 
                     Student Question: {chat_query}
                     """
-                    chat_response = model.generate_content([chat_system_prompt, image])
-                    assistant_reply = chat_response.text if (chat_response and chat_response.text) else "I could not analyze the image for this question. Please try asking again."
+                    # Stream the response for a real-time typewriter effect
+                    stream = model.generate_content(
+                        [chat_system_prompt, image],
+                        stream=True,
+                    )
+                    with st.chat_message("assistant"):
+                        def _chunk_generator(stream):
+                            for chunk in stream:
+                                if chunk.text:
+                                    yield chunk.text
+                        assistant_reply = st.write_stream(_chunk_generator(stream))
+                    if not assistant_reply:
+                        assistant_reply = "I could not analyze the image for this question. Please try again."
                     st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
                 except Exception as chat_err:
                     st.session_state.chat_messages.append({"role": "assistant", "content": f"⚠️ Error answering question: {str(chat_err)}"})
