@@ -41,14 +41,28 @@ html, body, [class*="css"], .stMarkdown {
     -webkit-font-smoothing: antialiased;
 }
 
+/* ── Viewport lock: prevent outer page scroll entirely ── */
+html, body {
+    overflow: hidden !important;
+    max-height: 100vh !important;
+}
+
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > .main {
+    overflow: hidden !important;
+    max-height: 100vh !important;
+}
+
 .stApp {
     background-color: #0E1015 !important;
     color: #E2E8F0 !important;
+    overflow: hidden !important;
+    height: 100vh !important;
 }
 
 .main .block-container {
-    padding-top: 0.6rem !important;
-    padding-bottom: 0 !important;
+    padding-top: 0.4rem !important;
+    padding-bottom: 0.2rem !important;
     max-width: 1440px !important;
     overflow: hidden !important;
 }
@@ -507,6 +521,8 @@ if "study_mode_used" not in st.session_state:
     st.session_state.study_mode_used = None
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
+if "pending_chat_query" not in st.session_state:
+    st.session_state.pending_chat_query = None
 
 # -----------------------------------------------------------------------------
 # 5. Split-Screen Layout (Left: 3 cols, Right: 7 cols)
@@ -694,38 +710,52 @@ with col_output:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
 
-    # 4. Chat Input — placed directly below the native fixed-height container
+        # 4. Thinking indicator + streaming — rendered INSIDE chat_area
+        if st.session_state.pending_chat_query:
+            pending_q = st.session_state.pending_chat_query
+            if uploaded_file is None or image is None:
+                st.session_state.chat_messages.append({"role": "assistant", "content": "⚠️ Please upload an image before asking questions."})
+                st.session_state.pending_chat_query = None
+                st.rerun()
+            else:
+                with st.spinner("⚙️ Thinking..."):
+                    try:
+                        model = genai.GenerativeModel("gemini-3.5-flash-lite")
+                        chat_system_prompt = f"""
+                        You are an elite academic AI tutor assisting a student with their uploaded study material.
+                        Analyze the provided image carefully and answer the student's question accurately, clearly, and concisely.
+                        Use formatting, bullet points, and code blocks where helpful to enhance readability.
+
+                        Student Question: {pending_q}
+                        """
+                        # Stream the response for a real-time typewriter effect
+                        stream = model.generate_content(
+                            [chat_system_prompt, image],
+                            stream=True,
+                        )
+                        with st.chat_message("assistant"):
+                            def _chunk_generator(s):
+                                for chunk in s:
+                                    if chunk.text:
+                                        yield chunk.text
+                            assistant_reply = st.write_stream(_chunk_generator(stream))
+                        if not assistant_reply:
+                            assistant_reply = "I could not analyze the image for this question. Please try again."
+                        st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
+                    except Exception as chat_err:
+                        st.session_state.chat_messages.append({"role": "assistant", "content": f"⚠️ Error: {str(chat_err)}"})
+                    finally:
+                        st.session_state.pending_chat_query = None
+                st.rerun()
+
+    # 5. Chat Input — anchored below the native fixed-height container
     chat_query = st.chat_input("Ask anything about this document...")
 
     if chat_query:
         if uploaded_file is None or image is None:
-            st.warning("⚠️ Please upload an image of your notes before asking questions.")
+            # Can't process — show error inside container on next run
+            st.session_state.chat_messages.append({"role": "assistant", "content": "⚠️ Please upload an image of your notes before asking questions."})
         else:
             st.session_state.chat_messages.append({"role": "user", "content": chat_query})
-            with st.spinner("🤖 Thinking..."):
-                try:
-                    model = genai.GenerativeModel("gemini-3.5-flash-lite")
-                    chat_system_prompt = f"""
-                    You are an elite academic AI tutor assisting a student with their uploaded study material.
-                    Analyze the provided image carefully and answer the student's question accurately, clearly, and concisely.
-                    Use formatting, bullet points, and code blocks where helpful to enhance readability.
-
-                    Student Question: {chat_query}
-                    """
-                    # Stream the response for a real-time typewriter effect
-                    stream = model.generate_content(
-                        [chat_system_prompt, image],
-                        stream=True,
-                    )
-                    with st.chat_message("assistant"):
-                        def _chunk_generator(stream):
-                            for chunk in stream:
-                                if chunk.text:
-                                    yield chunk.text
-                        assistant_reply = st.write_stream(_chunk_generator(stream))
-                    if not assistant_reply:
-                        assistant_reply = "I could not analyze the image for this question. Please try again."
-                    st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
-                except Exception as chat_err:
-                    st.session_state.chat_messages.append({"role": "assistant", "content": f"⚠️ Error answering question: {str(chat_err)}"})
-            st.rerun()
+            st.session_state.pending_chat_query = chat_query
+        st.rerun()
