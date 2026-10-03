@@ -1,101 +1,134 @@
 # 📸 Snap-Study
 
-Snap-Study ek interactive Python-based web application hai jo students aur learners ko study workflow efficiently manage karne mein help karta hai. Yeh project developers ke liye standardized development environment ke saath aata hai taaki setup bina kisi error ke ho sake.
+[![Python Version](https://shields.io)](https://python.org)
+[![Framework](https://shields.io)](https://palletsprojects.com)
+[![Environment](https://shields.io)](https://visualstudio.com)
+[![License: MIT](https://shields.io)](https://opensource.org)
+
+An advanced, Dockerized **Python-based Web Application** powered by the **Flask** ecosystem. **Snap-Study** delivers a highly responsive, modern interface designed to streamline educational workflows, capture instant session snapshots, and optimize student asset management. 
 
 ---
 
 ## 📋 Table of Contents
+- [🔍 System Architecture](#-system-architecture)
 - [✨ Key Features](#-key-features)
-- [💻 Tech Stack](#-tech-stack)
-- [⚙️ Getting Started](#️-getting-started)
+- [💻 Core Tech Stack](#-core-tech-stack)
+- [⚙️ Development Setup](#️-development-setup)
   - [Prerequisites](#prerequisites)
-  - [Local Installation](#local-installation)
-  - [Docker / Dev Container Setup](#docker--dev-container-setup)
-- [🚀 Usage](#-usage)
-- [🤝 Contributing](#-contributing)
+  - [Option A: Standard Local Installation](#option-a-standard-local-installation)
+  - [Option B: Containerized Dev Environment](#option-b-containerized-dev-environment-recommended)
+- [🚀 Execution & Usage](#-execution--usage)
+- [🤝 Contributing Protocol](#-contributing-protocol)
+- [📄 License](#-license)
 
 ---
 
-## ✨ Key Features
-* **Web UI Interface:** Flask application setup jo server-side templates aur route extraction handle karta hai.
-* **Streamlined Workflow:** Study tracking aur quick snapshot insights ke liye tailored backend.
-* **Ready-to-Code Environment:** `.devcontainer` configuration included hai, jisse VS Code ya GitHub Codespaces par single click mein coding start ho sake.
+## 🔍 System Architecture
 
----
+The following diagram illustrates how requests flow from the Client UI down through the containerized Flask backend ecosystem:
 
-## 💻 Tech Stack
-Project mein use hone wali core technologies:
-
-| Component | Technology |
-| --- | --- |
-| **Backend Framework** | Python, Flask |
-| **Environment Control** | Docker, VS Code DevContainers |
-| **Package Management** | Pip (`requirements.txt`) |
-
----
-
-## ⚙️ Getting Started
-
-Aap is project ko do tareeqon se setup kar sakte hain: **Locally** ya **Dev Containers/Docker** ka use karke.
-
-### Prerequisites
-Aapke system mein yeh installed hona chahiye:
-* Python 3.9+ (Agar local run kar rahe hain)
-* Docker Desktop & VS Code (Agar Dev Container use kar rahe hain)
-
----
-
-### Local Installation
-
-1. Repository ko clone karein:
-   ```bash
-   git clone https://github.com/RohanNimje/Snap-Study.git
-   ```
-2. Project directory mein jaayein:
-   ```bash
-   cd Snap-Study
-   ```
-3. Virtual environment banayein aur activate karein:
-   ```bash
-   # Windows ke liye:
-   python -m venv venv
-   venv\Scripts\activate
-
-   # macOS/Linux ke liye:
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-4. Required Python packages install karein:
-   ```bash
-   pip install -r requirements.txt
-   ```
-5. Application ko run karein:
-   ```bash
-   python app.py
-   ```
-
----
-
-### Docker / Dev Container Setup (Recommended)
-Agar aap containerized clean setup chahte hain:
-1. Is project ko **VS Code** mein open karein.
-2. Jab VS Code right bottom corner mein **"Reopen in Container"** ka notification dikhaye, toh uspar click karein.
-3. Yeh automatically saari dependencies backend mein configure kar dega bina aapke local system ko mess kiye.
-
----
-
-## 🚀 Usage
-Jab app run ho jaye, toh apna browser open karein aur check karein:
-```text
-http://127.0.0
+```mermaid
+graph TD
+    A[Client Browser] -->|HTTP Request / Port 5000| B(Flask WSGI Engine)
+    subgraph Isolated Dev Container Environment
+        B --> C{Application Controller: app.py}
+        C -->|Render Core Layouts| D[Jinja2 UI Templates]
+        C -->|Parse Requirements| E[Pip Context Engine]
+    end
+    D -->|Responsive Interface| A
 ```
 
 ---
 
-## 🤝 Contributing
-Agar aap isme features add karna chahte hain:
-1. Project ko **Fork** karein.
-2. New feature branch banayein (`git checkout -b feature/NewFeature`).
-3. Changes ko **Commit** karein (`git commit -m 'Added some cool feature'`).
-4. Branch ko **Push** karein (`git push origin feature/NewFeature`).
-5. Ek **Pull Request** open karein.
+## ✨ Key Features
+* **Engineered Routing:** Thread-safe backend controllers built natively on Flask's WSGI interface.
+* **Deterministic Isolation:** Standardized `.devcontainer` configuration ensures predictable dependency execution, eliminating "works on my machine" friction points.
+* **Agile Package Orchestration:** Expressed package dependencies strictly bound inside `requirements.txt` for minimal deployment footprint.
+
+---
+
+## 💻 Core Tech Stack
+
+| Layer | Component Technology | Purpose |
+| --- | --- | --- |
+| **Backend Engine** | Python 3.9+ / Flask | Core application control logic and routing orchestration. |
+| **Containerization** | Docker / VS Code DevContainers | Isolated workspace mapping and strict environment control. |
+| **Dependency Engine** | Pip Package Management | Standardized package synchronization matrix. |
+
+---
+
+## ⚙️ Development Setup
+
+Choose either a direct local installation or a highly recommended containerized sandbox layout.
+
+### Prerequisites
+Before proceeding, verify that your host machine contains the following engineering configurations:
+* **Python 3.9 or higher** (For local setups)
+* **Docker Desktop Engine** & **VS Code Extension: Dev Containers** (For containerized sandboxes)
+
+### Option A: Standard Local Installation
+
+1. **Clone the Source Tree:**
+   ```bash
+   git clone https://github.com
+   cd Snap-Study
+   ```
+
+2. **Initialize Isolated Virtual Runtime:**
+   ```bash
+   # Unix/macOS environments
+   python3 -m venv venv
+   source venv/bin/activate
+
+   # Windows environment
+   python -m venv venv
+   .\venv\Scripts\activate
+   ```
+
+3. **Install Package Layers:**
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+
+4. **Boot Up Application Thread:**
+   ```bash
+   python app.py
+   ```
+
+### Option B: Containerized Dev Environment (Recommended)
+
+1. Open the repository root within **VS Code**.
+2. When prompted by the system dialog in the bottom right corner, click **"Reopen in Container"**.
+3. The DevContainer configuration engine will automatically instantiate the isolated environment, spin up the precise system configurations, and securely map runtime operations.
+
+---
+
+## 🚀 Execution & Usage
+
+Once the local instance or DevContainer thread fires up completely, establish an connection interface via your browser endpoint:
+
+```text
+URL Destination: http://127.0.0
+```
+
+*For user interface documentation, place a functional screen recording or asset overview below:*
+![Core System Layout Target](assets/preview.png)
+
+---
+
+## 🤝 Contributing Protocol
+
+We maintain a strict branching policy to keep the codebase healthy:
+
+1. **Fork** the master repository.
+2. Spin up a designated contextual branch: `git checkout -b feature/OptimalPerformance`
+3. Commit structural modifications: `git commit -m 'feat: implement underlying performance enhancement'`
+4. Forward the tracking reference: `git push origin feature/OptimalPerformance`
+5. Generate an explicit **Pull Request** for manual peer review.
+
+---
+
+## 📄 License
+
+This enterprise suite is made open-source under the strict terms of the **MIT License**. For complete parameters, review the standard `LICENSE` file within this codebase.
